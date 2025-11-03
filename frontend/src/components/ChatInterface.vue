@@ -22,11 +22,11 @@
       </div>
 
       <!-- 流式输出显示 -->
-      <div v-if="isStreaming" class="message-container ai-message">
+      <div v-if="currentToolStatus || isStreaming" class="message-container ai-message">
         <div class="message-bubble">
           <div class="message-content">
             <div class="message-text streaming">
-              {{ streamingContent }}<span class="cursor">|</span>
+              {{ isStreaming && streamingContent || currentToolStatus + '...' }}<span class="cursor">|</span>
             </div>
           </div>
         </div>
@@ -76,6 +76,7 @@ const inputText = ref("");
 const isStreaming = ref(false);
 const streamingContent = ref("");
 const chatHistoryRef = ref(null);
+const currentToolStatus = ref("");
 
 // 格式化消息内容（支持换行）
 const formatMessage = (content) => {
@@ -107,6 +108,7 @@ const handleSend = async () => {
   // 开始流式响应
   isStreaming.value = true;
   streamingContent.value = "";
+  currentToolStatus.value = "";
 
   try {
     const response = await fetch("http://localhost:8000/api/chat", {
@@ -144,7 +146,16 @@ const handleSend = async () => {
         if (line.startsWith("data: ")) {
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.content) {
+
+            // 处理工具状态信息
+            if (["tool_start", "tool_end", "info"].includes(data.status)) {
+              currentToolStatus.value = data.content;
+              await scrollToBottom();
+              continue; // 跳过内容处理
+            }
+            
+            // 处理流式内容
+            if (data.content && data.status === "streaming" && !data.tool_name) {
               // 1. 积累原始带Markdown的内容
               rawStreamingContent += data.content;
 
@@ -168,6 +179,7 @@ const handleSend = async () => {
               });
               isStreaming.value = false;
               streamingContent.value = "";
+              currentToolStatus.value = "";
               rawStreamingContent = "";
               plainStreamingContent = "";
               await scrollToBottom();
@@ -196,6 +208,7 @@ const handleSend = async () => {
   } finally {
     isStreaming.value = false;
     streamingContent.value = "";
+    currentToolStatus.value = "";
     await scrollToBottom();
   }
 };
